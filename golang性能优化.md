@@ -246,4 +246,63 @@ func (s *SafeMap) Load(key string) (interface{}, bool) {
 # 5 优化golang GC
 Go程序的GC会对性能有较大影响，若机器内存足够大，可以通过修改GOGC参数来调整GC的频率(减少GC次数)，从而实现性能优化的目的。   
 具体GOGC的值调整为多少，需要结合实际情况（如服务已用内存、机器可用内存、服务接口耗时分布情况等) 
-# 6 优化 
+# 6 高并发下如何减少 context.WithTimeout 的内存分配？
+在高并发下，减少 context.WithTimeout 内存分配的核心思路只有三类：    
+
+1 能不创建就不创建    
+
+2 把 timeout 上移 / 复用   
+
+3 用更轻量的超时控制手段代替   
+
+下面逐条展开，都是实战中能明显降 alloc 的办法。   
+context.WithTimeout 为什么“贵”？
+
+每次调用它，至少会产生：
+
+一个新的 timerCtx 结构体（逃逸到堆）
+
+一个 time.Timer（内部有 heap 对象）
+
+一个 Done() channel
+
+一次 goroutine 调度关联（timer 触发）
+
+👉 在 QPS 很高的链路里，alloc + GC 压力非常明显    
+## 6.1 1 最有效的优化手段   
+把 WithTimeout 上移到入口层 。而不是 在 每一层 / 每一次 RPC / 每一次 DB 调用都建 timeout。   
+
+错误做法：   
+```
+func dao(ctx context.Context) error {
+    ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+    defer cancel()
+    ...
+}
+```
+
+正确做法：   只在请求入口建一次   
+
+```
+func handler(w http.ResponseWriter, r *http.Request) {
+    ctx, cancel := context.WithTimeout(r.Context(), 200*time.Millisecond)
+    defer cancel()
+
+    service(ctx)
+    dao(ctx)
+}
+
+底层只用ctx形参
+func dao(ctx context.Context) error {
+    select {
+    case <-ctx.Done():
+        return ctx.Err()
+    default:
+    }
+}
+
+```
+
+
+
+
