@@ -113,160 +113,138 @@ cdn.chenheng.com.	300	IN	A	192.0.2.1
 # 5.1 系统总体结构图
 ```mermaid
 flowchart TB
-    %% =======================
-    %% 访问入口层
-    %% =======================
-    User[终端用户]
-    Customer[CDN 客户]
+    %% ========= DNS 层 =========
+    AliDNS[阿里云 DNS]
+    CoreDNS[CoreDNS<br/>智能调度插件]
 
-    %% =======================
-    %% DNS 调度层
-    %% =======================
-    AliDNS[阿里云 DNS<br/>权威解析入口]
-    CoreDNS[内部智能 DNS<br/>CoreDNS 二次开发]
-
-    %% =======================
-    %% CDN 边缘层
-    %% =======================
-    subgraph EdgeLayer[CDN 边缘节点层]
-        EdgeAgent[边缘 Agent]
-        NginxCache[Nginx Cache]
-        EdgeAgent --> NginxCache
+    %% ========= 边缘层 =========
+    subgraph EdgeLayer[边缘节点层]
+        ATS[Apache Traffic Server<br/>HTTP Cache]
+        Agent[Edge Agent<br/>治理/上报]
+        ATS <-->|本地接口| Agent
     end
 
-    %% =======================
-    %% 控制面（管理后台）
-    %% =======================
-    subgraph ControlPlane[CDN 控制面 / 管理后台]
-        subgraph UI[访问入口]
-            AdminUI[内部管理后台]
-            ClientUI[客户私人后台]
-        end
+    %% ========= 控制面 =========
+    subgraph ControlPlane[CDN 控制面]
+        Backend[CDN 管理后台<br/>Go]
+        Scheduler[调度管理模块]
+        Cert[证书管理]
+        Billing[账单模块]
+        Stat[流量统计]
+        Refresh[刷新/预热管理]
 
-        Backend[CDN 管理后台服务<br/>Go]
-
-        subgraph DataLayer[数据存储层]
-            MySQL[(MySQL)]
-            Redis[(Redis)]
-        end
-
-        AdminUI --> Backend
-        ClientUI --> Backend
-        Backend --> MySQL
-        Backend --> Redis
+        Backend --> Scheduler
+        Backend --> Cert
+        Backend --> Billing
+        Backend --> Stat
+        Backend --> Refresh
     end
 
-    %% =======================
-    %% 刷新 / 预热系统
-    %% =======================
-    subgraph RefreshSystem[刷新 / 预热调度系统]
-        Master[刷新 Master 节点]
-        MQ[RocketMQ]
-        Master --> MQ
+    %% ========= 存储 =========
+    MySQL[(MySQL)]
+    Redis[(Redis)]
+
+    %% ========= MQ =========
+    MQ[RocketMQ]
+
+    %% ========= 可选缓存池 =========
+    subgraph Optional[可选：共享缓存层（演进）]
+        MinIO[(MinIO<br/>对象存储)]
     end
 
-    %% =======================
-    %% 容器与基础设施
-    %% =======================
-    subgraph Platform[容器平台与基础设施]
-        K8S[Kubernetes 集群]
-        ECS[阿里云 ECS]
-        K8S --> ECS
-    end
-
-    %% =======================
-    %% 访问与调度关系
-    %% =======================
-    Customer --> AliDNS
+    %% ========= 流量路径 =========
     AliDNS --> CoreDNS
-    CoreDNS --> NginxCache
+    CoreDNS --> ATS
 
-    %% =======================
-    %% 管理与调度关系
-    %% =======================
-    Backend --> Master
-    MQ --> EdgeAgent
+    %% ========= 控制与治理 =========
+    Backend --> CoreDNS
+    Backend --> Agent
+    Refresh --> MQ
+    MQ --> Agent
 
-    %% =======================
-    %% 部署关系
-    %% =======================
-    CoreDNS --- K8S
-    Backend --- K8S
-    Master --- K8S
-    MQ --- K8S
-    EdgeAgent --- ECS
-    NginxCache --- ECS
+    %% ========= 数据 =========
+    Backend --> MySQL
+    Backend --> Redis
+
+    %% ========= 可选回源 =========
+    ATS -.cache miss .-> MinIO
 
 ```
 # 5.1  整体系统分层视图
 ```mermaid
 flowchart TB
-    %% 用户与入口
-    User[终端用户 / 客户]
-    AliDNS[阿里云 DNS 权威解析]
+    %% ========= 用户层 =========
+    User[终端用户 / 访问流量]
+    Customer[CDN 客户]
 
-    %% DNS 层
-    CoreDNS[内部智能 DNS<br/>二次开发 CoreDNS]
+    %% ========= DNS 调度层 =========
+    AliDNS[阿里云 DNS<br/>权威解析]
+    CoreDNS[智能 DNS 调度层<br/>CoreDNS 二次开发]
 
-    %% 调度与访问
-    User --> AliDNS
-    AliDNS --> CoreDNS
+    %% ========= 边缘数据面 =========
+    subgraph EdgePlane[CDN 边缘数据面]
+        ATS[ATS 边缘缓存节点]
+    end
 
-    %% CDN 访问路径
-    CoreDNS --> EdgeNginx[边缘节点<br/>Nginx Cache]
-
-    %% 管理后台
-    subgraph ControlPlane[CDN 管理控制面]
+    %% ========= 控制面 =========
+    subgraph ControlPlane[CDN 控制面]
         AdminUI[内部管理后台]
-        ClientUI[客户私人后台]
+        ClientUI[客户管理后台]
 
         Backend[CDN 管理后台服务<br/>Go]
-        MySQL[(MySQL)]
-        Redis[(Redis)]
 
         AdminUI --> Backend
         ClientUI --> Backend
-        Backend --> MySQL
-        Backend --> Redis
     end
 
-    %% Kubernetes & Infra
-    subgraph K8S[Kubernetes 集群]
-        CoreDNS
-        Backend
-        MQ[RocketMQ]
+    %% ========= 数据存储层 =========
+    subgraph DataLayer[数据存储层]
+        MySQL[(MySQL)]
+        Redis[(Redis)]
     end
 
-    %% 刷新预热系统
-    subgraph RefreshSystem[刷新 / 预热系统]
-        Master[Master 节点<br/>刷新任务调度]
-        Agent[边缘 Agent]
-    end
-
-    Backend --> Master
-    Master --> MQ
-    MQ --> Agent
-    Agent --> EdgeNginx
-
-    %% 基础设施
-    subgraph Infra[阿里云基础设施]
+    %% ========= 基础设施 =========
+    subgraph Infra[容器与云基础设施]
+        K8S[Kubernetes 集群]
         ECS[阿里云 ECS]
-        K8S
+        K8S --> ECS
     end
+
+    %% ========= 访问路径 =========
+    User --> AliDNS
+    Customer --> AliDNS
+    AliDNS --> CoreDNS
+    CoreDNS --> ATS
+
+    %% ========= 管理关系 =========
+    Backend --> CoreDNS
+    Backend --> ATS
+    Backend --> MySQL
+    Backend --> Redis
+
+    %% ========= 部署关系 =========
+    CoreDNS --- K8S
+    Backend --- K8S
+    ATS --- ECS
+
 ```
 # 5.2 刷新 / 预热链路细化图 
 ```mermaid
 sequenceDiagram
-    participant Admin as CDN 管理后台
+    participant UI as 管理后台
+    participant Backend as CDN 后台
     participant Master as 刷新 Master
     participant MQ as RocketMQ
-    participant Agent as 边缘 Agent
-    participant Nginx as Nginx Cache
+    participant Agent as Edge Agent
+    participant ATS as ATS Cache
 
-    Admin->>Master: 提交刷新 / 预热任务
-    Master->>MQ: 发布刷新任务消息
+    UI->>Backend: 提交刷新 / 预热请求
+    Backend->>Master: 创建刷新任务
+    Master->>MQ: 发布刷新消息
     MQ->>Agent: 消费刷新任务
-    Agent->>Nginx: 执行缓存刷新 / 预热
+    Agent->>ATS: 执行缓存清理 / 预热
+    ATS-->>Agent: 执行结果
+    Agent-->>Backend: 状态回报
 ```
 
 # 5.3 DNS 调度逻辑视图
