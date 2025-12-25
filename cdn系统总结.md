@@ -67,7 +67,7 @@ aiqiyi.com.		172800	IN	NS	ns2.aiqiyi.com.
 
 ## 3.4 第3步的后续（关键步骤2）：获取CNAME记录
 cdn.aiqiyi.com.	600	IN	CNAME	cdn.chenheng.com.
-解读：这就是您问题中的记录！​ aiqiyi.com的权威服务器返回了一条CNAME记录，明确指出 cdn.aiqiyi.com只是 cdn.mingfuyun.com的一个别名。解析器意识到它需要重新开始查询 cdn.mingfuyun.com。
+解读：这就是您问题中的记录！​ aiqiyi.com的权威服务器返回了一条CNAME记录，明确指出 cdn.aiqiyi.com只是 cdn.chenheng.com的一个别名。解析器意识到它需要重新开始查询 cdn.chenheng.com。
 
 ## 3.5 第4步：查询 chenheng.com的权威DNS服务器（回答您的问题）    
 此时，解析器为了解析 cdn.chenheng.com，会重复第1到第3步的过程，但目标变成了 chenheng.com。它会：   
