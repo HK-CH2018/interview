@@ -2,14 +2,16 @@
 - [1 Goroutine 为什么比线程轻量？实现原理是啥？](#1-goroutine-为什么比线程轻量实现原理是啥)
 - [2 GMP 调度模型](#2-gmp-调度模型)
   - [2.1 gmp模型](#21-gmp模型)
-    - [2.1.1 调度流程](#211-调度流程)
-    - [2.1.2 Work Stealing（工作窃取）](#212-work-stealing工作窃取)
-    - [2.1.3 系统调用阻塞问题](#213-系统调用阻塞问题)
-    - [2.1.4 网络 IO 的优化](#214-网络-io-的优化)
-    - [2.1.5 为什么需要P](#215-为什么需要p)
-  - [2.2 GMP 模型中 M 和 P 的关系？为什么需要 work stealing？](#22-gmp-模型中-m-和-p-的关系为什么需要-work-stealing)
-  - [2.3 Go 调度器如何避免全局锁？](#23-go-调度器如何避免全局锁)
-  - [2.4 阻塞系统调用对 GMP 的影响？如何优化？](#24-阻塞系统调用对-gmp-的影响如何优化)
+  - [2.2 调度流程](#22-调度流程)
+  - [2.3 goroutine发生系统调用阻塞有什么影响？](#23-goroutine发生系统调用阻塞有什么影响)
+  - [2.4 如何优化？](#24-如何优化)
+    - [2.4.1 Go Runtime 如何解决这个问题？](#241-go-runtime-如何解决这个问题)
+    - [2.4.2 网络 IO 的进一步优化（netpoll）](#242-网络-io-的进一步优化netpoll)
+    - [2.4.3 调度层面的优化](#243-调度层面的优化)
+  - [2.5 如果大量 goroutine 都在 syscall，会发生什么？](#25-如果大量-goroutine-都在-syscall会发生什么)
+  - [2.6 为什么需要P](#26-为什么需要p)
+  - [2.7 GMP 模型中 M 和 P 的关系？为什么需要 work stealing？](#27-gmp-模型中-m-和-p-的关系为什么需要-work-stealing)
+  - [2.8 为什么 Go 的 runqueue 长度是 256？](#28-为什么-go-的-runqueue-长度是-256)
 - [3 Channel](#3-channel)
   - [3.1 为什么 Channel 是线程安全的？](#31-为什么-channel-是线程安全的)
   - [3.2 Channel 的底层结构](#32-channel-的底层结构)
@@ -71,12 +73,93 @@ Machine (M) 绑定 P
       ↓      
 CPU 执行      
 M 必须绑定 P 才能执行 G         
-### 2.1.1 调度流程
+## 2.2 调度流程
 一个 goroutine 执行流程：      
 1 创建 goroutine   
 2 放入 P 的本地队列   ，P1: G1 G2 G3   
 3 M 从队列取 G 执行
-### 2.1.2 Work Stealing（工作窃取）
+## 2.3 goroutine发生系统调用阻塞有什么影响？
+goroutine 最终必须运行在 M（OS 线程） 上。  
+
+当 goroutine 执行 阻塞系统调用（syscall） 时，比如：  
+
+文件 IO 
+
+网络 IO 
+
+sleep 
+
+DNS 查询  
+
+某些 C 库调用 
+
+此时会发生：  
+
+当前 goroutine 进入 syscall 
+
+执行 goroutine 的 M 被内核阻塞  
+
+如果不处理，P 也会跟着被占用  
+
+问题就来了：  
+
+P 被占住，无法调度新的 goroutine  
+
+CPU 利用率下降  
+
+goroutine 吞吐下降  
+
+## 2.4 如何优化？
+### 2.4.1 Go Runtime 如何解决这个问题？
+Go Runtime 设计了一套机制来避免 syscall 阻塞调度器。
+
+核心策略是：
+
+syscall 时释放 P
+
+具体流程：
+
+goroutine 调用 syscall
+
+当前 M 进入 syscall 阻塞
+
+runtime 把 P 从这个 M 上解绑
+
+P 重新分配给新的 M
+
+新 M 继续执行 goroutine   
+即使某个线程被阻塞，调度器仍然可以继续工作。
+### 2.4.2 网络 IO 的进一步优化（netpoll）
+工作流程：
+
+goroutine 发起网络 IO
+
+如果数据未就绪
+
+goroutine 被挂起
+
+epoll 等待事件
+
+IO 就绪后唤醒 goroutine
+
+这样：
+
+goroutine 不会占用线程等待 IO。
+
+优点：
+
+大量网络连接只需要少量线程
+
+极大提升并发能力  
+### 2.4.3 调度层面的优化
+Go Runtime 还有两个重要优化：
+
+1 动态创建 M  
+
+如果没有空闲线程可以接管 P，runtime 会创建新的 M。  
+
+保证 goroutine 可以继续执行。 
+2 Work Stealing（工作窃取） 
 如果某个 P 没任务了，它会从其他 P 偷任务。   
 P1: G1 G2 G3 G4   
 P2: empty    
@@ -85,33 +168,146 @@ P2 会偷：G3 G4
 优点：
 CPU利用率高    
 自动负载均衡
-### 2.1.3 系统调用阻塞问题
-如果 goroutine 执行：系统调用(read/write), 线程可能被阻塞。Go runtime 会：解绑 P 
-M 被阻塞   
-P 解绑   
-P 找新的 M    
-这样其他 goroutine 继续执行。   
-### 2.1.4 网络 IO 的优化   
-使用epoll优化goroutine的io     
-goroutine 发起 IO
-↓   
-挂起   
-↓   
-epoll 监听   
-↓   
-IO完成
-↓   
-唤醒 goroutine        
-这样线程不会被阻塞。      
-### 2.1.5 为什么需要P
+
+## 2.5 如果大量 goroutine 都在 syscall，会发生什么？
+如果大量 goroutine 同时进入 syscall，Go runtime 会不断创建新的 M 来接管 P，从而避免调度器停滞。但这样可能导致线程数量膨胀，增加内存消耗和上下文切换开销。因此 Go 对网络 IO 使用 netpoll（epoll/kqueue）实现非阻塞 IO，从而避免大量线程被系统调用阻塞。  
+## 2.6 为什么需要P
 每个P维护一个队列，减少锁竞争。      
       
-## 2.2 GMP 模型中 M 和 P 的关系？为什么需要 work stealing？
+## 2.7 GMP 模型中 M 和 P 的关系？为什么需要 work stealing？
+P是处理器个数一般与机器cpu核数相同，例如8 核 CPU → 默认 P = 8。 
+M 是 **操作系统线程**，数量是 **动态变化的**。go runtime会根据需要创建M，一般来说M >= P     
 
-## 2.3 Go 调度器如何避免全局锁？
+这叫Work Stealing，   
+优点：  
+CPU利用率高     
+自动负载均衡  
+## 2.8 为什么 Go 的 runqueue 长度是 256？
+从 调度效率 + cache + 锁竞争 三个角度回答。
 
-## 2.4 阻塞系统调用对 GMP 的影响？如何优化？
+第一，先说结论（面试开头一句话）
 
+Go 的每个 P 都有一个 长度为 256 的本地 goroutine 队列（runqueue），这样设计是为了：
+
+减少访问全局队列
+
+减少锁竞争
+
+提高 CPU cache 命中率
+
+提升调度吞吐
+
+第二，避免频繁访问全局队列
+
+如果本地队列太小，例如：
+
+runqueue = 8
+
+那么 goroutine 稍微多一点就会：
+
+本地队列满
+
+goroutine 被放到 global runqueue
+
+这样会导致：
+
+多个线程同时访问 global queue
+
+结果：
+
+全局锁竞争严重。
+
+而 256 的容量可以容纳大量 goroutine，大多数调度都在本地完成。
+
+所以：
+
+访问 global queue 的次数大幅减少。
+
+第三，减少调度器锁竞争
+
+global runqueue 是需要加锁的。
+
+如果 goroutine 经常进入 global queue：
+
+所有线程都会竞争同一把锁。
+
+但本地队列 256 足够大：
+
+大多数 goroutine 都在本地队列运行。
+
+所以：
+
+锁竞争显著减少。
+
+第四，提高 CPU cache 命中率
+
+调度器需要频繁操作 runqueue。
+
+如果队列太大：
+
+会导致：
+
+内存访问增加
+
+cache miss 增加
+
+如果太小：
+
+又会频繁访问 global queue。
+
+256 是 Go runtime 团队经过大量测试后选择的一个 cache-friendly 大小：
+
+数据结构不会太大
+
+大部分操作都在 CPU cache 内完成
+
+因此调度效率更高。
+
+第五，配合 work stealing
+
+当某个 P 的 runqueue 为空时：
+
+它会从其他 P 的 runqueue 偷一半任务。
+
+例如：
+
+P1：0 个 G
+P2：200 个 G
+
+P1 会从 P2 偷 100 个 G。
+
+如果 runqueue 太小：
+
+偷不到多少任务。
+
+而 256 的容量可以保证：
+
+窃取效率高
+
+负载均衡更好。
+
+第六，为什么不是 1024 或更大
+
+如果 runqueue 非常大：
+
+例如 4096：
+
+问题会变成：
+
+队列操作变慢
+
+cache miss 增加
+
+goroutine 分布不均
+
+work stealing 成本增加
+
+所以：
+
+256 是 调度效率和内存局部性之间的折中值。 
+
+总结：
+Go 的每个 P 都维护一个本地 goroutine 队列，长度是 256。这样设计主要是为了减少对全局队列的访问，从而降低锁竞争。同时本地队列可以提高 CPU cache 命中率，让调度器的大部分操作都在本地完成。另外在 work stealing 时，如果某个 P 空闲，可以从其他 P 的队列偷一半 goroutine，256 的容量可以保证负载均衡效率。这个值是 Go runtime 经过大量性能测试后选择的一个调度效率和内存局部性之间的折中。
 # 3 Channel  
 ## 3.1 为什么 Channel 是线程安全的？ 
 channel 内部使用了 mutex 锁 + 等待队列 + runtime 调度。   
