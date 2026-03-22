@@ -9,7 +9,7 @@
   - [3.2 第2步：查询 .com 顶级域服务器](#32-第2步查询-com-顶级域服务器)
   - [3.3 第3步：查询 aiqiyi.com的权威DNS服务器（关键步骤1）](#33-第3步查询-aiqiyicom的权威dns服务器关键步骤1)
   - [3.4 第3步的后续（关键步骤2）：获取CNAME记录](#34-第3步的后续关键步骤2获取cname记录)
-  - [3.5 第4步：查询 chenheng.com的权威DNS服务器（回答您的问题）](#35-第4步查询-chenhengcom的权威dns服务器回答您的问题)
+  - [3.5 第4步：查询 chenheng.com的权威DNS服务器](#35-第4步查询-chenhengcom的权威dns服务器）
   - [3.6 第5步：获得最终IP](#36-第5步获得最终ip)
 - [4 内部自研的dns系统是怎么开发部署的](#4-内部自研的dns系统是怎么开发部署的)
   - [4.1 内部自研智能dns解析系统介绍](#41-内部自研智能dns解析系统介绍)
@@ -94,7 +94,7 @@ aiqiyi.com.		172800	IN	NS	ns2.aiqiyi.com.
 cdn.aiqiyi.com.	600	IN	CNAME	cdn.chenheng.com.
 解读：这就是您问题中的记录！​ aiqiyi.com的权威服务器返回了一条CNAME记录，明确指出 cdn.aiqiyi.com只是 cdn.chenheng.com的一个别名。解析器意识到它需要重新开始查询 cdn.chenheng.com。
 
-## 3.5 第4步：查询 chenheng.com的权威DNS服务器（回答您的问题）    
+## 3.5 第4步：查询 chenheng.com的权威DNS服务器    
 此时，解析器为了解析 cdn.chenheng.com，会重复第1到第3步的过程，但目标变成了 chenheng.com。它会：   
 从根服务器找到 .com服务器。
 从 .com服务器找到 chenheng.com的权威DNS服务器。    
