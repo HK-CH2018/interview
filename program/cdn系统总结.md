@@ -3,13 +3,13 @@
   - [1.2 该系统分为几个模块？](#12-该系统分为几个模块)
   - [1.3 架构图是什么？](#13-架构图是什么)
 - [2 该系统完整的工作流程是什么？从用户发起请求下载到最后完成下载文件的过程](#2-该系统完整的工作流程是什么从用户发起请求下载到最后完成下载文件的过程)
-  - [2.1 图片中重新解析 cdn.chenheng.com 这一步的理解](#21-图片中重新解析-cdnchenhengcom-这一步的理解)
+  - [2.1 图片中重新解析 cdn.testcloud.com 这一步的理解](#21-图片中重新解析-cdntestcloudcom-这一步的理解)
 - [3 dns解析到结果的流程解释，每一步骤](#3-dns解析到结果的流程解释每一步骤)
   - [3.1 第1步：从根域名服务器开始](#31-第1步从根域名服务器开始)
   - [3.2 第2步：查询 .com 顶级域服务器](#32-第2步查询-com-顶级域服务器)
   - [3.3 第3步：查询 aiqiyi.com的权威DNS服务器（关键步骤1）](#33-第3步查询-aiqiyicom的权威dns服务器关键步骤1)
   - [3.4 第3步的后续（关键步骤2）：获取CNAME记录](#34-第3步的后续关键步骤2获取cname记录)
-  - [3.5 第4步：查询 chenheng.com的权威DNS服务器](#35-第4步查询-chenhengcom的权威dns服务器）
+  - [3.5 第4步：查询 testcloud.com的权威DNS服务器](#35-第4步查询-testcloudcom的权威dns服务器)
   - [3.6 第5步：获得最终IP](#36-第5步获得最终ip)
 - [4 内部自研的dns系统是怎么开发部署的](#4-内部自研的dns系统是怎么开发部署的)
   - [4.1 内部自研智能dns解析系统介绍](#41-内部自研智能dns解析系统介绍)
@@ -19,9 +19,22 @@
 - [5.1  整体系统分层视图](#51--整体系统分层视图)
 - [5.2 刷新 / 预热链路细化图](#52-刷新--预热链路细化图)
 - [5.3 DNS 调度逻辑视图](#53-dns-调度逻辑视图)
+- [5.4 新版调度系统架构图](#54-新版调度系统架构图)
+  - [5.4.1 为什么要“分层调度”](#541-为什么要分层调度)
+  - [5.4.2 调度系统的节点agent监控上报系统](#542-调度系统的节点agent监控上报系统)
+  - [5.4.3 调度核心算法](#543-调度核心算法)
+    - [5.4.3.1 多维评分模型：（解决：到底选哪个节点？）](#5431-多维评分模型解决到底选哪个节点)
+    - [5.4.3.2 EWMA 平滑（解决：为什么调度会抖)](#5432-ewma-平滑解决为什么调度会抖)
+    - [5.4.3.3 一致性哈希（解决：请求应该打到哪个节点）](#5433-一致性哈希解决请求应该打到哪个节点)
+- [5.5 刷新预热一致性架构图](#55-刷新预热一致性架构图)
+  - [5.5.1 刷新（Purge）](#551-刷新purge)
+  - [5.5.2 预热方案](#552-预热方案)
+  - [5.5.3 分层预热（核心难点）](#553-分层预热核心难点)
+  - [5.5.4 如何保证最终一致性](#554-如何保证最终一致性)
 - [6 思考](#6-思考)
   - [6.1 为什么缓存文件在ats中，而不是nginx的cache中 ？](#61-为什么缓存文件在ats中而不是nginx的cache中-)
   - [6.2 只使用ats做热缓存，不使用Minio作为温缓存的原因是什么？](#62-只使用ats做热缓存不使用minio作为温缓存的原因是什么)
+
 
 该文档把自己做过的cdn系统知识，架构整理
 # 1 该系统分为几个模块，这个系统是干什么的？，架构图是什么？
@@ -36,7 +49,7 @@ dns解析系统，二次开发k8s的coredns组件，为客户的下载文件请�
 ```mermaid
 graph TD
     A[用户请求<br>cdn.aiqiyi.com/video.mp4] --> B{爱奇艺源站判断}
-    B -->|需要CDN| C[302重定向<br>cdn.aiqiyi.com → cdn.chenheng.com]
+    B -->|需要CDN| C[302重定向<br>cdn.aiqiyi.com → cdn.testcloud.com]
     B -->|直接服务| D[原站响应]
     
     C --> E[DNS解析开始]
@@ -44,10 +57,10 @@ graph TD
     F --> G[根域名服务器]
     G --> H[.com顶级域]
     H --> I[aiqiyi.com权威DNS]
-    I --> J[返回CNAME记录<br>cdn.aiqiyi.com → cdn.chenheng.com]
+    I --> J[返回CNAME记录<br>cdn.aiqiyi.com → cdn.testcloud.com]
     
-    J --> K[重新解析cdn.chenheng.com]
-    K --> L[根→.com→chenheng.com权威DNS]
+    J --> K[重新解析cdn.testcloud.com]
+    K --> L[根→.com→testcloud.com权威DNS]
     L --> M[**您的DNS系统**<br>部署在阿里云LB]
     M --> N{GSLB智能调度}
     N -->|用户在北京| O[返回华北节点IP]
@@ -59,9 +72,9 @@ graph TD
     R -->|命中| S[直接返回视频]
     R -->|未命中| T[回源拉取→缓存→返回]
 ```
-CNAME记录的作用： 将流量从客户的域名（cdn.aiqiyi.com）引导至您公司的CDN调度系统（cdn.chenheng.com）
-## 2.1 图片中重新解析 cdn.chenheng.com 这一步的理解
-查询cdn.chenheng.com的权威DNS（关键步骤）： 现在，本地DNS服务器转而向管理 chenheng.com的权威DNS服务器（也就是您公司管理的DNS服务器，或者您CDN服务商提供的DNS系统）查询 cdn.chenheng.com的地址。
+CNAME记录的作用： 将流量从客户的域名（cdn.aiqiyi.com）引导至您公司的CDN调度系统（cdn.testcloud.com）
+## 2.1 图片中重新解析 cdn.testcloud.com 这一步的理解
+查询cdn.testcloud.com的权威DNS（关键步骤）： 现在，本地DNS服务器转而向管理 testcloud.com的权威DNS服务器（也就是您公司管理的DNS服务器，或者您CDN服务商提供的DNS系统）查询 cdn.testcloud.com的地址。
 
 # 3 dns解析到结果的流程解释，每一步骤 
 使用dig 模拟这个流程的各个环节每一步解析的过程和步骤
@@ -91,25 +104,25 @@ aiqiyi.com.		172800	IN	NS	ns2.aiqiyi.com.
 解读：解析器找到了管理 aiqiyi.com的权威服务器（例如 ns1.aiqiyi.com）。接下来，它会向这些权威服务器查询 cdn.aiqiyi.com的记录。   
 
 ## 3.4 第3步的后续（关键步骤2）：获取CNAME记录
-cdn.aiqiyi.com.	600	IN	CNAME	cdn.chenheng.com.
-解读：这就是您问题中的记录！​ aiqiyi.com的权威服务器返回了一条CNAME记录，明确指出 cdn.aiqiyi.com只是 cdn.chenheng.com的一个别名。解析器意识到它需要重新开始查询 cdn.chenheng.com。
+cdn.aiqiyi.com.	600	IN	CNAME	cdn.testcloud.com.
+解读：这就是您问题中的记录！​ aiqiyi.com的权威服务器返回了一条CNAME记录，明确指出 cdn.aiqiyi.com只是 cdn.testcloud.com的一个别名。解析器意识到它需要重新开始查询 cdn.testcloud.com。
 
-## 3.5 第4步：查询 chenheng.com的权威DNS服务器    
-此时，解析器为了解析 cdn.chenheng.com，会重复第1到第3步的过程，但目标变成了 chenheng.com。它会：   
+## 3.5 第4步：查询 testcloud.com的权威DNS服务器    
+此时，解析器为了解析 cdn.testcloud.com，会重复第1到第3步的过程，但目标变成了 testcloud.com。它会：   
 从根服务器找到 .com服务器。
-从 .com服务器找到 chenheng.com的权威DNS服务器。    
-这一步的输出会明确显示 chenheng.com的权威服务器是谁，例如：   
-如果只想快速查看 chenheng.com的权威DNS服务器，而不关心完整的追踪过程，可以使用更简单的命令：dig ns chenheng.com    
+从 .com服务器找到 testcloud.com的权威DNS服务器。    
+这一步的输出会明确显示 testcloud.com的权威服务器是谁，例如：   
+如果只想快速查看 testcloud.com的权威DNS服务器，而不关心完整的追踪过程，可以使用更简单的命令：dig ns testcloud.com    
 ```
-chenheng.com.		86400	IN	NS	vip4.alidns.com.   
-chenheng.com.		86400	IN	NS	vip3.alidns.com.    
-vip3.alidns.com是 chenheng.com的【权威域名服务器】
+testcloud.com.		86400	IN	NS	vip4.alidns.com.   
+testcloud.com.		86400	IN	NS	vip3.alidns.com.    
+vip3.alidns.com是 testcloud.com的【权威域名服务器】
 ```
 
 ## 3.6 第5步：获得最终IP
-解析器最后向 chenheng.com的权威服务器查询 cdn.chenheng.com，并最终获得A记录（IP地址）。    
+解析器最后向 testcloud.com的权威服务器查询 cdn.testcloud.com，并最终获得A记录（IP地址）。    
 ```
-cdn.chenheng.com.	300	IN	A	192.0.2.1   
+cdn.testcloud.com.	300	IN	A	192.0.2.1   
 ```
 
 # 4 内部自研的dns系统是怎么开发部署的
