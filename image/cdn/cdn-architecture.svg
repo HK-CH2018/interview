@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" fill="none">
+  <defs>
+    <style>
+      .title { font: 700 34px Arial, sans-serif; fill: #172033; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #5A6578; }
+      .lane-title { font: 700 20px Arial, sans-serif; fill: #28354A; }
+      .label { font: 700 18px Arial, sans-serif; fill: #172033; }
+      .small { font: 400 14px Arial, sans-serif; fill: #4D5A6E; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #657186; }
+      .box { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 2; rx: 14; }
+      .blue { fill: #EAF3FF; stroke: #77A7E5; }
+      .green { fill: #EAF8F0; stroke: #71BE8B; }
+      .orange { fill: #FFF4E5; stroke: #E8A44C; }
+      .purple { fill: #F1ECFF; stroke: #9B83E6; }
+      .gray { fill: #F7F9FC; stroke: #CCD5E1; }
+      .lane { fill: #F8FAFC; stroke: #D8E0EA; stroke-width: 2; rx: 24; }
+      .arrow { stroke: #526174; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #7B8797; stroke-width: 2.5; fill: none; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#526174"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="980" fill="#FFFFFF"/>
+  <text x="70" y="70" class="title">CDN 项目架构图</text>
+  <text x="70" y="104" class="subtitle">DNS 智能调度 + ATS 边缘缓存 + Go 控制面 + MQ 异步刷新 / 预热</text>
+
+  <rect x="55" y="145" width="1490" height="140" class="lane"/>
+  <text x="85" y="180" class="lane-title">访问入口</text>
+  <rect x="105" y="205" width="190" height="58" class="box blue"/>
+  <text x="132" y="232" class="label">终端用户</text>
+  <text x="132" y="252" class="small">访问视频 / 文件</text>
+
+  <rect x="365" y="205" width="220" height="58" class="box blue"/>
+  <text x="392" y="232" class="label">客户 CDN 域名</text>
+  <text x="392" y="252" class="small">cdn.aiqiyi.com</text>
+
+  <rect x="655" y="205" width="210" height="58" class="box blue"/>
+  <text x="685" y="232" class="label">CNAME 接入</text>
+  <text x="685" y="252" class="small">cdn.testcloud.com</text>
+
+  <rect x="935" y="205" width="210" height="58" class="box blue"/>
+  <text x="965" y="232" class="label">阿里云权威 DNS</text>
+  <text x="965" y="252" class="small">域名权威解析入口</text>
+
+  <rect x="1215" y="205" width="240" height="58" class="box blue"/>
+  <text x="1245" y="232" class="label">CoreDNS 智能插件</text>
+  <text x="1245" y="252" class="small">地域 / 健康 / 策略调度</text>
+
+  <path d="M295 234H365" class="arrow"/>
+  <path d="M585 234H655" class="arrow"/>
+  <path d="M865 234H935" class="arrow"/>
+  <path d="M1145 234H1215" class="arrow"/>
+
+  <rect x="55" y="325" width="720" height="240" class="lane"/>
+  <text x="85" y="360" class="lane-title">调度决策</text>
+  <rect x="105" y="390" width="150" height="54" class="box purple"/>
+  <text x="137" y="423" class="label">地域策略</text>
+  <rect x="285" y="390" width="150" height="54" class="box purple"/>
+  <text x="317" y="423" class="label">健康检测</text>
+  <rect x="465" y="390" width="150" height="54" class="box purple"/>
+  <text x="497" y="423" class="label">负载权重</text>
+  <rect x="105" y="475" width="150" height="54" class="box purple"/>
+  <text x="137" y="508" class="label">业务策略</text>
+  <rect x="285" y="475" width="150" height="54" class="box purple"/>
+  <text x="309" y="508" class="label">一致性哈希</text>
+  <rect x="465" y="475" width="230" height="54" class="box purple"/>
+  <text x="493" y="508" class="label">多维评分 + EWMA</text>
+
+  <path d="M1335 263V310C1335 340 725 340 725 390" class="dash"/>
+  <path d="M255 417H285" class="arrow"/>
+  <path d="M435 417H465" class="arrow"/>
+  <path d="M255 502H285" class="arrow"/>
+  <path d="M435 502H465" class="arrow"/>
+
+  <rect x="825" y="325" width="720" height="240" class="lane"/>
+  <text x="855" y="360" class="lane-title">边缘数据面</text>
+  <rect x="875" y="405" width="230" height="72" class="box green"/>
+  <text x="915" y="435" class="label">L1 边缘节点</text>
+  <text x="915" y="456" class="small">ATS 热缓存，离用户最近</text>
+
+  <rect x="1175" y="405" width="230" height="72" class="box green"/>
+  <text x="1215" y="435" class="label">L2 区域节点</text>
+  <text x="1215" y="456" class="small">热点复用 / 降低回源</text>
+
+  <rect x="1325" y="500" width="150" height="46" class="box green"/>
+  <text x="1360" y="529" class="label">客户源站</text>
+
+  <path d="M695 502C760 502 805 441 875 441" class="arrow"/>
+  <path d="M1105 441H1175" class="arrow"/>
+  <path d="M1290 477V500" class="arrow"/>
+  <text x="1118" y="429" class="tiny">MISS</text>
+  <text x="1298" y="497" class="tiny">MISS</text>
+
+  <rect x="55" y="605" width="720" height="300" class="lane"/>
+  <text x="85" y="640" class="lane-title">控制面</text>
+  <rect x="105" y="675" width="190" height="62" class="box orange"/>
+  <text x="133" y="703" class="label">内部 / 客户后台</text>
+  <text x="133" y="723" class="small">域名、证书、任务入口</text>
+
+  <rect x="365" y="675" width="210" height="62" class="box orange"/>
+  <text x="395" y="703" class="label">CDN 后台服务</text>
+  <text x="395" y="723" class="small">Go 控制面核心</text>
+
+  <rect x="625" y="675" width="110" height="62" class="box orange"/>
+  <text x="654" y="703" class="label">MySQL</text>
+  <text x="648" y="723" class="small">配置数据</text>
+
+  <rect x="625" y="765" width="110" height="62" class="box orange"/>
+  <text x="656" y="793" class="label">Redis</text>
+  <text x="646" y="813" class="small">状态缓存</text>
+
+  <rect x="365" y="805" width="210" height="62" class="box orange"/>
+  <text x="395" y="833" class="label">刷新 Master</text>
+  <text x="395" y="853" class="small">去重、限流、任务生成</text>
+
+  <path d="M295 706H365" class="arrow"/>
+  <path d="M575 706H625" class="arrow"/>
+  <path d="M575 796H625" class="arrow"/>
+  <path d="M470 737V805" class="arrow"/>
+
+  <rect x="825" y="605" width="720" height="300" class="lane"/>
+  <text x="855" y="640" class="lane-title">刷新 / 预热异步链路</text>
+  <rect x="875" y="720" width="190" height="66" class="box gray"/>
+  <text x="925" y="750" class="label">RocketMQ</text>
+  <text x="915" y="770" class="small">任务分发 / 重试</text>
+
+  <rect x="1135" y="720" width="190" height="66" class="box gray"/>
+  <text x="1184" y="750" class="label">Edge Agent</text>
+  <text x="1174" y="770" class="small">节点治理 / 上报</text>
+
+  <rect x="1365" y="675" width="120" height="50" class="box gray"/>
+  <text x="1389" y="706" class="label">Purge</text>
+  <rect x="1365" y="785" width="120" height="50" class="box gray"/>
+  <text x="1384" y="816" class="label">Preload</text>
+
+  <path d="M575 836C680 836 750 753 875 753" class="arrow"/>
+  <path d="M1065 753H1135" class="arrow"/>
+  <path d="M1325 753C1350 753 1350 700 1365 700" class="arrow"/>
+  <path d="M1325 753C1350 753 1350 810 1365 810" class="arrow"/>
+  <path d="M1230 720V477" class="dash"/>
+  <path d="M1425 675C1425 590 1040 550 990 477" class="dash"/>
+
+  <text x="70" y="940" class="tiny">说明：L1 负责贴近用户的热缓存；L2 负责区域热点复用；控制面通过 MQ + Agent 异步执行刷新 / 预热并回报状态。</text>
+</svg>
